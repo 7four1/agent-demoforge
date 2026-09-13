@@ -12,8 +12,9 @@ import subprocess
 import tempfile
 import unittest
 import os
+from unittest import mock
 
-from agent_demoforge.tts import MacSayTTSBackend, read_aiff_duration
+from agent_demoforge.tts import MacSayTTSBackend, read_aiff_duration, speak_live
 
 
 @unittest.skipUnless(shutil.which("say"), "macOS 'say' command not available in this environment")
@@ -47,6 +48,34 @@ class TestAiffDuration(unittest.TestCase):
                 f.write(b"not an aiff file at all, just bytes")
             with self.assertRaises(ValueError):
                 read_aiff_duration(bogus)
+
+
+@unittest.skipUnless(shutil.which("say"), "macOS 'say' command not available in this environment")
+class TestSpeakLive(unittest.TestCase):
+    """Real (not stubbed) invocation of the `say`-through-speakers path used
+    by `agent-demoforge ask`/`chat`'s `--speak` flag -- a single short word,
+    to keep automated test runs brief/quiet, but genuinely exercised end to
+    end (real subprocess, real exit code, real elapsed time), same
+    verification standard as `TestAiffDuration` above."""
+
+    def test_real_say_invocation_succeeds_with_a_voice(self):
+        import time
+
+        start = time.monotonic()
+        result = speak_live("ok", voice="Samantha")
+        elapsed = time.monotonic() - start
+
+        self.assertTrue(result.ok, msg=result.error)
+        self.assertIsNone(result.path)  # no file output -- this plays live
+        # A real `say` invocation takes some non-zero, bounded time.
+        self.assertGreater(elapsed, 0.0)
+        self.assertLess(elapsed, 15.0)
+
+    def test_unavailable_say_reports_a_clean_error_not_an_exception(self):
+        with mock.patch("agent_demoforge.tts.shutil.which", return_value=None):
+            result = speak_live("hello", voice="Samantha")
+        self.assertFalse(result.ok)
+        self.assertIn("not available", result.error)
 
 
 if __name__ == "__main__":

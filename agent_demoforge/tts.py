@@ -169,6 +169,41 @@ class MacSayTTSBackend(TTSBackend):
         return TTSResult(path=out_path, duration_seconds=duration, ok=True)
 
 
+def speak_live(text: str, voice: Optional[str] = None, timeout: int = 120) -> TTSResult:
+    """Speak `text` aloud immediately through the speakers via macOS `say`,
+    with NO file output -- unlike `MacSayTTSBackend.synthesize` (which
+    writes an AIFF file for later muxing into video), this calls `say`
+    directly so it plays live. Used by `agent-demoforge ask`/`chat`'s
+    `--speak` flag, which has nothing to mux into and just wants the
+    answer read aloud. macOS-only, same honesty pattern as the rest of
+    this module: returns a `TTSResult` with `ok=False` and a clear `error`
+    on any other platform, or if `say` isn't on PATH, rather than raising.
+    """
+    if shutil.which("say") is None:
+        return TTSResult(
+            path=None,
+            duration_seconds=0.0,
+            ok=False,
+            error="the 'say' command is not available (macOS-only backend)",
+        )
+    cmd = ["say"]
+    if voice:
+        cmd += ["-v", voice]
+    cmd.append(text)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return TTSResult(path=None, duration_seconds=0.0, ok=False, error="'say' timed out")
+    if proc.returncode != 0:
+        return TTSResult(
+            path=None,
+            duration_seconds=0.0,
+            ok=False,
+            error=f"'say' failed (exit {proc.returncode}): {proc.stderr.strip()}",
+        )
+    return TTSResult(path=None, duration_seconds=0.0, ok=True)
+
+
 class NullTTSBackend(TTSBackend):
     """Fallback backend for platforms with no TTS engine wired up. Always
     reports unavailable so the pipeline degrades gracefully instead of

@@ -14,7 +14,7 @@ import sys
 
 from dotenv import find_dotenv, load_dotenv
 
-from . import config, pipeline
+from . import config, pipeline, qa
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -95,6 +95,53 @@ def build_parser() -> argparse.ArgumentParser:
         help="force a fresh Explore phase even if a cached transcript exists for this "
         "repo content + model (see .agent_demoforge_cache/).",
     )
+
+    def _add_qa_common_args(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--model",
+            default=None,
+            help="Claude model to use. Precedence: --model > "
+            f"{config.ENV_PREFIX}MODEL > ANTHROPIC_MODEL > built-in default "
+            f"({pipeline.DEFAULT_MODEL}).",
+        )
+        p.add_argument(
+            "--voice",
+            default=None,
+            help="voice name to pass to 'say -v' when --speak is given. Defaults to "
+            f"'Samantha' (env: {config.ENV_PREFIX}VOICE).",
+        )
+        p.add_argument(
+            "--speak",
+            action="store_true",
+            help="also speak each answer aloud live through the speakers via macOS 'say' "
+            "at the resolved --voice (macOS-only; off by default).",
+        )
+
+    ask = sub.add_parser(
+        "ask",
+        help="ask a one-shot, read-only question about a repository, grounded in its code",
+    )
+    ask.add_argument(
+        "args",
+        nargs="+",
+        metavar="[<repo-path-or-git-url>] <question>",
+        help="the question to ask, optionally preceded by a repo path/URL. If the repo is "
+        f"omitted, {config.ENV_PREFIX}REPO must be set (directly or via .env).",
+    )
+    _add_qa_common_args(ask)
+
+    chat = sub.add_parser(
+        "chat",
+        help="start an interactive, read-only multi-turn Q&A session about a repository",
+    )
+    chat.add_argument(
+        "source",
+        nargs="?",
+        default=None,
+        help="local path or git URL of the repository to chat about. Optional if "
+        f"{config.ENV_PREFIX}REPO is set (directly or via .env).",
+    )
+    _add_qa_common_args(chat)
 
     sub.add_parser(
         "init",
@@ -178,6 +225,46 @@ def main(argv=None) -> int:
         except FileNotFoundError as e:
             print(f"agent-demoforge: error: {e}", file=sys.stderr)
             return 1
+
+    if args.cmd in ("ask", "chat"):
+        model = config.resolve_model(args.model, pipeline.DEFAULT_MODEL)
+        voice = config.resolve(args.voice, [f"{config.ENV_PREFIX}VOICE"], "Samantha")
+
+        if args.cmd == "ask":
+            # args.args is 1+ tokens: either just the question (repo falls
+            # back to AGENT_DEMOFORGE_REPO), or "<repo> <question...>".
+            # Same fallback logic as `generate`'s positional source arg
+            # (config.resolve), just applied after we've worked out which
+            # token(s) are the repo vs. the question.
+            env_repo = config.resolve(None, [f"{config.ENV_PREFIX}REPO"], None)
+            if len(args.args) == 1:
+                source, question = env_repo, args.args[0]
+            else:
+                source, question = args.args[0], " ".join(args.args[1:])
+
+            if not source:
+                print(
+                    f"agent-demoforge: error: no repository given -- pass "
+                    f"<repo-path-or-git-url> before the question, or set "
+                    f"{config.ENV_PREFIX}REPO (directly or via .env)",
+                    file=sys.stderr,
+                )
+                return 1
+            if not question or not question.strip():
+                print("agent-demoforge: error: no question given", file=sys.stderr)
+                return 1
+
+            return qa.run_ask(source, question, model=model, voice=voice, speak=args.speak)
+
+        source = config.resolve(args.source, [f"{config.ENV_PREFIX}REPO"], None)
+        if not source:
+            print(
+                f"agent-demoforge: error: no repository given -- pass a positional "
+                f"<repo-path-or-git-url>, or set {config.ENV_PREFIX}REPO (directly or via .env)",
+                file=sys.stderr,
+            )
+            return 1
+        return qa.run_chat(source, model=model, voice=voice, speak=args.speak)
 
     parser.print_help()
     return 1
