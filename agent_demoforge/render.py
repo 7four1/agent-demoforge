@@ -112,7 +112,7 @@ def render_frame(
     draw.rectangle([0, 0, width, 50], fill=HEADER_BG)
     draw.text(
         (20, 13),
-        f"demoforge  —  beat {beat_index}/{beat_count}",
+        f"agent-demoforge  —  beat {beat_index}/{beat_count}",
         font=body_font,
         fill=ACCENT_COLOR,
     )

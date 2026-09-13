@@ -13,7 +13,7 @@ import tempfile
 import unittest
 import os
 
-from demoforge.tts import MacSayTTSBackend, read_aiff_duration
+from agent_demoforge.tts import MacSayTTSBackend, read_aiff_duration
 
 
 @unittest.skipUnless(shutil.which("say"), "macOS 'say' command not available in this environment")
@@ -22,7 +22,7 @@ class TestAiffDuration(unittest.TestCase):
         backend = MacSayTTSBackend()
         with tempfile.TemporaryDirectory() as tmp:
             out_path = os.path.join(tmp, "test.aiff")
-            text = "This is a short test sentence for demoforge."
+            text = "This is a short test sentence for agent-demoforge."
             result = backend.synthesize(text, out_path)
 
             self.assertTrue(result.ok, msg=result.error)

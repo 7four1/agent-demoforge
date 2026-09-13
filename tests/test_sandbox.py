@@ -1,11 +1,11 @@
-"""Offline tests for demoforge.sandbox: path confinement, copy-not-clone
+"""Offline tests for agent-demoforge.sandbox: path confinement, copy-not-clone
 isolation, and command timeout/cap enforcement. All fast and network-free."""
 
 import os
 import tempfile
 import unittest
 
-from demoforge.sandbox import (
+from agent_demoforge.sandbox import (
     CommandBudgetExceeded,
     PathEscapeError,
     Sandbox,
@@ -96,9 +96,9 @@ class TestSandboxBudgets(unittest.TestCase):
 
     def test_successful_command_captures_output(self):
         sb = Sandbox(self.workdir, per_command_timeout=5, max_commands=5, max_wall_seconds=60)
-        result = sb.run("echo hello-demoforge")
+        result = sb.run("echo hello-agent-demoforge")
         self.assertEqual(result.exit_code, 0)
-        self.assertIn("hello-demoforge", result.stdout)
+        self.assertIn("hello-agent-demoforge", result.stdout)
         self.assertFalse(result.timed_out)
 
     def test_command_runs_confined_to_workdir(self):

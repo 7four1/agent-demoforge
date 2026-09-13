@@ -1,4 +1,4 @@
-"""Offline tests for demoforge.render: ANSI stripping and frame rendering.
+"""Offline tests for agent-demoforge.render: ANSI stripping and frame rendering.
 
 None of this touches ffmpeg or the network -- render.py's core logic is
 pure Pillow + string processing, so it's fully testable in isolation.
@@ -10,7 +10,7 @@ import unittest
 
 from PIL import Image
 
-from demoforge import render
+from agent_demoforge import render
 
 
 class TestStripAnsi(unittest.TestCase):

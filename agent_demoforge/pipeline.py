@@ -1,4 +1,4 @@
-"""Orchestrates the full demoforge pipeline: explore -> script -> execute ->
+"""Orchestrates the full agent-demoforge pipeline: explore -> script -> execute ->
 narrate -> render -> video -> manifest."""
 
 from __future__ import annotations
@@ -101,7 +101,7 @@ def build_fallback_script(
         beats.append(
             DemoBeat(
                 narration="Now we add a second task.",
-                command=f'{console_script} add "Ship the demoforge release"',
+                command=f'{console_script} add "Ship the agent-demoforge release"',
             )
         )
         beats.append(
@@ -217,15 +217,15 @@ def generate(
     voice: Optional[str] = "Daniel",
     author_name: Optional[str] = None,
 ) -> int:
-    print(f"demoforge: preparing an isolated sandbox copy of '{source}'...")
+    print(f"agent-demoforge: preparing an isolated sandbox copy of '{source}'...")
     repo_root = sandbox.prepare_workdir(source)
-    print(f"demoforge: sandbox ready at: {repo_root}")
-    print("demoforge: your original repository/URL will NOT be touched; every command below")
+    print(f"agent-demoforge: sandbox ready at: {repo_root}")
+    print("agent-demoforge: your original repository/URL will NOT be touched; every command below")
     print("           runs only inside the temporary sandbox copy shown above.")
 
     if not yes:
         print()
-        print("WARNING: demoforge is about to run shell commands from a generated demo script:")
+        print("WARNING: agent-demoforge is about to run shell commands from a generated demo script:")
         print(f"  - inside the temporary sandbox copy at: {repo_root}")
         print(f"  - never against your original path/URL: {source}")
         print(
@@ -243,10 +243,10 @@ def generate(
 
     script, llm_live, llm_reason = run_llm_phases(repo_root, model, author_name=author_name)
     if llm_live:
-        print(f"demoforge: explore+script phases completed live via the Anthropic API ({model}).")
+        print(f"agent-demoforge: explore+script phases completed live via the Anthropic API ({model}).")
     else:
-        print(f"demoforge: live Anthropic API phases unavailable ({llm_reason}).")
-        print("demoforge: falling back to an offline heuristic demo script (clearly marked in output).")
+        print(f"agent-demoforge: live Anthropic API phases unavailable ({llm_reason}).")
+        print("agent-demoforge: falling back to an offline heuristic demo script (clearly marked in output).")
         script = build_fallback_script(repo_root, source=source, author_name=author_name)
 
     sb = sandbox.Sandbox(
@@ -256,19 +256,19 @@ def generate(
         max_wall_seconds=max_wall_seconds,
     )
     if sb.is_python_project():
-        print("demoforge: setting up a fresh virtualenv inside the sandbox...")
+        print("agent-demoforge: setting up a fresh virtualenv inside the sandbox...")
         try:
             sb.setup_venv()
         except Exception as e:  # noqa: BLE001
-            print(f"demoforge: WARNING: venv setup failed, running commands without one: {e}")
+            print(f"agent-demoforge: WARNING: venv setup failed, running commands without one: {e}")
 
     backend = tts_mod.get_default_backend(voice=voice)
     tts_available = backend.is_available()
     if tts_available:
-        print("demoforge: narration audio will be synthesized via the macOS 'say' backend.")
+        print("agent-demoforge: narration audio will be synthesized via the macOS 'say' backend.")
     else:
         reason = getattr(backend, "reason", "unavailable")
-        print(f"demoforge: narration audio synthesis skipped ({reason}); using timed captions only.")
+        print(f"agent-demoforge: narration audio synthesis skipped ({reason}); using timed captions only.")
 
     os.makedirs(out_dir, exist_ok=True)
     frames_dir = os.path.join(out_dir, "frames")
@@ -281,7 +281,7 @@ def generate(
     records: List[BeatRecord] = []
 
     for i, beat in enumerate(script.beats, start=1):
-        print(f"demoforge: beat {i}/{beat_count}: {beat.narration!r}")
+        print(f"agent-demoforge: beat {i}/{beat_count}: {beat.narration!r}")
         record = BeatRecord(
             index=i, narration=beat.narration, command=beat.command, is_setup=beat.is_setup
         )
@@ -328,11 +328,11 @@ def generate(
 
         records.append(record)
 
-    print("demoforge: concatenating beat clips into demo.mp4 ...")
+    print("agent-demoforge: concatenating beat clips into demo.mp4 ...")
     demo_mp4 = os.path.join(out_dir, "demo.mp4")
     video_mod.concat_clips([r.clip_path for r in records], demo_mp4)
 
-    print("demoforge: rendering demo.gif preview ...")
+    print("agent-demoforge: rendering demo.gif preview ...")
     demo_gif = os.path.join(out_dir, "demo.gif")
     video_mod.make_gif([r.clip_path for r in records], demo_gif)
 
@@ -349,7 +349,7 @@ def generate(
     )
 
     print()
-    print(f"demoforge: done. Output written to: {os.path.abspath(out_dir)}")
+    print(f"agent-demoforge: done. Output written to: {os.path.abspath(out_dir)}")
     print(f"  - {demo_mp4}")
     print(f"  - {demo_gif}")
     print(f"  - {narration_md}")

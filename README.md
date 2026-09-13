@@ -1,10 +1,10 @@
-# demoforge
+# agent-demoforge
 
-Point demoforge at a code repository. Get back a real, narrated video demo
+Point agent-demoforge at a code repository. Get back a real, narrated video demo
 of it — no script to write, no screen to record, no voiceover to read
 aloud yourself.
 
-demoforge is an AI agent that actually **reads the code** of a target
+agent-demoforge is an AI agent that actually **reads the code** of a target
 repository (not just its README), decides what's genuinely worth
 demonstrating, runs real commands against a disposable sandbox copy of the
 repo, narrates the result with real synthesized speech, and renders it all
@@ -15,7 +15,7 @@ Below is the real `demo.gif` this repository's own pipeline produced for
 the bundled `examples/toy_repo` project — generated end-to-end by the code
 in this repo, with real audio, real command output, and no hand-editing:
 
-![demoforge generating a demo of its own bundled toy_repo example](docs/demo.gif)
+![agent-demoforge generating a demo of its own bundled toy_repo example](docs/demo.gif)
 
 The GIF above is a silent, README-embeddable preview. The full version with
 real narrated audio is checked into this repo at
@@ -80,13 +80,13 @@ flowchart LR
 ## Quickstart
 
 ```bash
-git clone <this-repo-url> demoforge
-cd demoforge
+git clone <this-repo-url> agent-demoforge
+cd agent-demoforge
 pip install -e .
 
 export ANTHROPIC_API_KEY=sk-ant-...   # for the live Explore/Script phases
 
-demoforge generate examples/toy_repo --out demo_output --yes \
+agent-demoforge generate examples/toy_repo --out demo_output --yes \
   --author-name "Your Name"   # optional: mentioned in the demo's intro
 ```
 
@@ -101,7 +101,7 @@ That produces, for real:
   command run, its exit code, captured output, audio duration, and
   whether any step was degraded or skipped.
 
-No `ANTHROPIC_API_KEY`? demoforge does not fail closed — it clearly
+No `ANTHROPIC_API_KEY`? agent-demoforge does not fail closed — it clearly
 discloses that the Explore/Script phases are running as an offline
 heuristic dry run (a small rule-based script built from what's on disk,
 e.g. detecting a `pyproject.toml` console-script entry point), and still
@@ -111,7 +111,7 @@ mode ran.
 
 ## Safety
 
-- demoforge **never touches your original repository**. A local path is
+- agent-demoforge **never touches your original repository**. A local path is
   `shutil.copytree`'d into a fresh `tempfile.mkdtemp()` directory before
   anything runs; a git URL is `git clone --depth 1`'d into one instead.
   Every command in the generated script executes with its working
@@ -124,14 +124,14 @@ mode ran.
   session is hard-capped on total command count (default 12) and total
   wall time (default 8 minutes / 480s) — all configurable via
   `--per-command-timeout`, `--max-commands`, and `--max-wall-seconds`.
-- Path-confinement (`demoforge/sandbox.py::safe_join`) is applied both to
+- Path-confinement (`agent_demoforge/sandbox.py::safe_join`) is applied both to
   the Explore phase's `list_dir`/`read_file` tools and is unit-tested
   against `..`-traversal and absolute-path-injection attempts.
 
 ## Command-line usage
 
 ```
-demoforge generate <repo-path-or-git-url> [--out demo_output] [--yes]
+agent-demoforge generate <repo-path-or-git-url> [--out demo_output] [--yes]
                     [--model claude-opus-5] [--max-commands 12]
                     [--per-command-timeout 90] [--max-wall-seconds 480]
                     [--voice Daniel] [--author-name "Your Name"]
@@ -154,13 +154,13 @@ demoforge generate <repo-path-or-git-url> [--out demo_output] [--yes]
   `ANTHROPIC_MODEL`. Every call uses `thinking={"type": "adaptive"}`.
 - The Explore phase is a hand-written agentic loop (not the SDK's beta
   tool runner), so the tool-execution and stopping logic is fully visible
-  in `demoforge/explorer.py`.
+  in `agent_demoforge/explorer.py`.
 - AIFF audio duration is read by parsing the file's `COMM` chunk directly
   (channel count, sample-frame count, and an 80-bit IEEE-754 extended
   float sample rate) rather than via the standard library's `aifc`
   module — `aifc` was removed in Python 3.13 (PEP 594), so relying on it
   would break on current Python. This is implemented from scratch in
-  `demoforge/tts.py::read_aiff_duration` and is fully reliable for the
+  `agent_demoforge/tts.py::read_aiff_duration` and is fully reliable for the
   files macOS `say` produces.
 - All per-beat clips are encoded with one consistent H.264/AAC recipe so
   the final ffmpeg concat-demuxer pass reliably produces a single clean
@@ -169,7 +169,7 @@ demoforge generate <repo-path-or-git-url> [--out demo_output] [--yes]
 ## Limitations
 
 - **macOS-only TTS backend in v0.** Only `say` is implemented and
-  verified. `demoforge/tts.py::TTSBackend` is a small abstract interface —
+  verified. `agent_demoforge/tts.py::TTSBackend` is a small abstract interface —
   adding a Linux/Windows backend (Piper, a cloud TTS API, etc.) means
   implementing `is_available()` and `synthesize()` and wiring it into
   `get_default_backend()`; nothing else in the pipeline needs to change.
@@ -179,7 +179,7 @@ demoforge generate <repo-path-or-git-url> [--out demo_output] [--yes]
   positioning, or TUI redraw support.
 - **Short scripts by design.** 5–9 beats, a handful of commands. This is
   meant to produce a quick, watchable tour, not an exhaustive walkthrough.
-- **No GUI/browser support.** Everything demoforge demonstrates has to be
+- **No GUI/browser support.** Everything agent-demoforge demonstrates has to be
   drivable from the command line inside the sandbox; it can't drive a
   browser or a graphical application.
 - **Command budget can leave a script partially demonstrated.** If a

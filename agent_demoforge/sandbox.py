@@ -1,7 +1,7 @@
 """Sandboxing: safe temp-copy/clone of a target repo, path confinement, and
 capped shell command execution.
 
-Safety is the whole point of this module: demoforge must never run anything
+Safety is the whole point of this module: agent-demoforge must never run anything
 against the user's original repository. Every entry point here either
 (a) creates a brand-new temp directory copy/clone, or (b) operates strictly
 inside a directory that was already confirmed to be such a copy.
@@ -29,7 +29,7 @@ IGNORED_DIR_NAMES = {
     ".venv",
     "venv",
     "node_modules",
-    ".demoforge_venv",
+    ".agent_demoforge_venv",
 }
 
 
@@ -71,7 +71,7 @@ def prepare_workdir(source: str) -> str:
     path) or shallow clone (git URL) of `source`. Returns the path to the
     copy/clone -- never the original path.
     """
-    tmp_parent = tempfile.mkdtemp(prefix="demoforge_")
+    tmp_parent = tempfile.mkdtemp(prefix="agent_demoforge_")
     target = os.path.join(tmp_parent, "repo")
 
     if is_git_url(source):
@@ -152,7 +152,7 @@ class Sandbox:
     def setup_venv(self, timeout: int = 180) -> str:
         """Create a fresh virtualenv inside the sandboxed copy and return the
         path to its python interpreter."""
-        venv_dir = os.path.join(self.workdir, ".demoforge_venv")
+        venv_dir = os.path.join(self.workdir, ".agent_demoforge_venv")
         subprocess.run(
             [sys.executable, "-m", "venv", venv_dir],
             check=True,

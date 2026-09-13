@@ -105,7 +105,7 @@ def list_dir(repo_root: str, path: str = ".") -> str:
         return f"Error: '{path}' is not a directory"
     entries = []
     for name in sorted(os.listdir(target)):
-        if name in (".git", "__pycache__", ".demoforge_venv", ".venv", "venv"):
+        if name in (".git", "__pycache__", ".agent_demoforge_venv", ".venv", "venv"):
             continue
         full = os.path.join(target, name)
         if os.path.isdir(full):

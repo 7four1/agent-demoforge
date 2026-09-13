@@ -1,4 +1,4 @@
-"""Command-line entry point: `demoforge generate <repo-path-or-git-url> --out demo_output/`."""
+"""Command-line entry point: `agent-demoforge generate <repo-path-or-git-url> --out demo_output/`."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from . import pipeline
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="demoforge",
-        description="Point demoforge at a code repository and get back a real narrated video demo.",
+        prog="agent-demoforge",
+        description="Point agent-demoforge at a code repository and get back a real narrated video demo.",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -72,7 +72,7 @@ def main(argv=None) -> int:
                 author_name=args.author_name,
             )
         except FileNotFoundError as e:
-            print(f"demoforge: error: {e}", file=sys.stderr)
+            print(f"agent-demoforge: error: {e}", file=sys.stderr)
             return 1
 
     parser.print_help()

@@ -31,7 +31,7 @@ network access.
 
 ## Why this exists
 
-This project is bundled with [demoforge](https://github.com/) as a small,
-fast, fully offline example repository that demoforge can point itself at
+This project is bundled with [agent-demoforge](https://github.com/) as a small,
+fast, fully offline example repository that agent-demoforge can point itself at
 to generate a narrated video demo, without depending on any external
 project.
