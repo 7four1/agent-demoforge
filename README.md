@@ -12,6 +12,11 @@ into a playable `demo.mp4` (plus a `demo.gif` you can drop straight into a
 GitHub README) — structured as a three-act video: **Overview**, **Code
 Walkthrough**, and **Live Demo**.
 
+Prefer a quick answer over a video? `agent-demoforge ask <repo> "<question>"` and
+`agent-demoforge chat <repo>` answer questions about a repo directly, grounded in
+its real code, read-only (no `--yes` needed) — see **Ask questions about
+the code** below.
+
 Below is the real `demo.gif` this repository's own pipeline produced for
 the bundled `examples/toy_repo` project — generated end-to-end by the code
 in this repo, with real audio, real command output, real source code read
@@ -189,6 +194,143 @@ entire real Narrate/Render/Video pipeline against whatever script it
 produced. `narration_script.md` and `manifest.json` both record which mode
 ran.
 
+## Ask questions about the code
+
+Beyond generating a video, agent-demoforge can also just answer questions about a
+repository directly, grounded in its actual source — no video, no TTS file
+output required, and a **much simpler safety story than `generate`**:
+
+```bash
+agent-demoforge ask examples/toy_repo "what does this project do"
+agent-demoforge ask examples/toy_repo "where's the CLI entry point defined"
+agent-demoforge chat examples/toy_repo        # interactive multi-turn session
+```
+
+- **`ask <repo-path-or-git-url> "<question>"`** — one-shot: prepares the
+  same kind of disposable, read-only sandbox copy as `generate`
+  (`sandbox.prepare_workdir` — your original repo/URL is never touched),
+  runs a manual agentic tool-use loop (same shape as the Explore phase,
+  reusing `explorer.TOOLS`/`explorer.execute_tool`) to answer the
+  question, and prints the answer to stdout.
+- **`chat <repo-path-or-git-url>`** — interactive REPL: same sandbox +
+  cache-seeding as `ask`, then repeatedly prompts `> ` for a question and
+  answers it, maintaining the full conversation history (including every
+  tool_use/tool_result round) across turns so follow-up questions have
+  context of what was already explored and answered. Type `exit` or
+  `quit` (or hit Ctrl+D) to end the session; it then prints how many
+  questions were answered.
+- The repo positional argument falls back to `AGENT_DEMOFORGE_REPO` if
+  omitted, exactly like `generate`'s does (same `config.resolve` logic,
+  not a separate reimplementation). For `ask`, if only one argument is
+  given it's treated as the question and the repo comes from the env var;
+  if two (or more, defensively joined) are given, the first is the repo.
+
+### Read-only: meaningfully simpler safety story than `generate`
+
+`ask`/`chat` **never execute a shell command** — only the existing
+`list_dir`/`read_file` tools, both confined to the sandboxed repo root via
+`sandbox.safe_join` exactly like the Explore phase. Because there's
+nothing to run, there is no `--yes` gate: both commands print a short,
+explicit read-only safety note on startup and just answer questions.
+
+### No offline fallback for Q&A
+
+Unlike `generate` (which has `pipeline.build_fallback_script`, a genuine
+heuristic dry run when no live API is available), there is **no**
+meaningful offline substitute for open-ended question answering — a
+canned or heuristic "answer" to an arbitrary question would just be
+fabrication. If no Anthropic credentials are available,
+`qa.check_credentials()` fails fast (before any sandbox is even prepared)
+with one clear, honest error message and a non-zero exit — no traceback,
+no fake answer:
+
+```
+$ agent-demoforge ask examples/toy_repo "what does this do"
+agent-demoforge: error: cannot answer questions without a live Anthropic API connection (no ANTHROPIC_API_KEY environment variable is set).
+agent-demoforge: unlike `generate`, `ask`/`chat` have no offline fallback for open-ended Q&A -- set ANTHROPIC_API_KEY and try again.
+```
+
+That's real output from actually running the command with no
+`ANTHROPIC_API_KEY` set in the environment this feature was built in — the
+same environment situation as the rest of this project (see
+**Verification honesty** below).
+
+### Bidirectional Explore-phase cache sharing with `generate`
+
+This is the other point of `ask`/`chat`: they read from and write to
+**the exact same** `.agent_demoforge_cache/` Explore-transcript cache
+`generate` uses (`cache.load`/`cache.save`, keyed by repo content
+fingerprint + model — see **Explore-phase caching** above).
+
+- Before answering, `ask`/`chat` check the cache first. On a hit, they
+  print `Explore-phase cache HIT -- reusing cached exploration of this
+  repo...` and seed the conversation with that cached transcript, simply
+  appending the question as a new turn on top of it — no re-exploration.
+- On a miss, they run the identical `explorer.run_explore_loop` fresh
+  (same function `generate` uses), answer the question on top of it, and
+  best-effort save that fresh Explore transcript back to the cache
+  (failure to save is logged and non-fatal, never blocks the answer) —
+  so a **later `generate` run against the same repo content + model gets
+  a cache hit too**, skipping its own live Explore loop.
+
+**Verification honesty:** both directions were verified in this session,
+but with different depths of "real":
+  - **Direction "ask/chat's own cache-miss save → later cache-load
+    read"** (whether by a later `ask`/`chat`, or by `generate`'s own
+    `cache.load` call) is verified for real, twice over: once in
+    `tests/test_qa.py::TestBidirectionalCacheRoundTrip` and
+    `TestDryRunAgainstRealToyRepo` (real `cache.save`/`cache.load`
+    round trip, real fingerprinting), and once live through the actual
+    CLI entry point (`agent-demoforge ask examples/toy_repo "..."` run
+    twice in a row with only the network call stubbed): the first run
+    printed `Explore-phase cache MISS`, wrote a real file under
+    `.agent_demoforge_cache/`, and the second run against the same repo
+    printed `Explore-phase cache HIT` and made no exploration API calls
+    at all.
+  - **Direction "a `generate`-produced cache entry → `ask`/`chat` reads
+    it"** is verified the same way one layer down: `cache.save` is called
+    with the exact same signature/shape `pipeline.run_llm_phases` uses
+    after a live `generate` run (`tests/test_qa.py::
+    TestBidirectionalCacheRoundTrip::test_generate_style_save_is_read_by_ask_chat`),
+    and `qa.load_or_explore` correctly reads it back as a HIT. What is
+    **not** verified is a real, live `generate` run followed by a real,
+    live `ask` run sharing one real cache file end to end — that would
+    require a real `ANTHROPIC_API_KEY`, which (consistent with the rest
+    of this project, see **Explore-phase caching** above) was not
+    available while building this. Both directions rest on the same
+    `cache.py` read/write code path either way, so this is a thin,
+    disclosed gap rather than an untested one.
+
+### `--speak`
+
+```bash
+agent-demoforge ask examples/toy_repo "what does this do" --speak
+agent-demoforge chat examples/toy_repo --speak --voice Daniel
+```
+
+Off by default. When given, each answer is also spoken aloud **live**
+through the speakers via the same macOS `say` mechanism `generate` uses
+for narration (`agent_demoforge/tts.py`), at the resolved `--voice` /
+`AGENT_DEMOFORGE_VOICE` (default `Samantha`) — but calling `say` directly
+with no `-o` file argument (`tts.speak_live`), rather than writing an AIFF
+file and replaying it, since there's no video to mux this into. **macOS
+only**, same honesty pattern as the rest of this project's TTS code: on
+any other platform, or if `say` isn't on `PATH`, it prints a `WARNING` and
+continues (the text answer is always printed regardless of `--speak`).
+Extremely long answers are truncated to roughly 2000 characters before
+being spoken (`qa.MAX_SPEAK_CHARS`) so `--speak` can't hang reading out a
+huge answer — the full, untruncated answer is always what gets printed to
+stdout.
+
+**Verified for real**, not just trusted from reading the code: a real
+`say -v Samantha "ok"` invocation (`tts.speak_live`, no file output) is
+exercised in `tests/test_tts_duration.py::TestSpeakLive`, asserting it
+actually returns success and completes in bounded, non-zero time; a full
+`agent-demoforge chat ... --speak` dry run (scripted client, real
+sandbox/tools/cache, only the network call stubbed) showed the session's
+wall-clock time increase by roughly the expected amount for three real
+`say` invocations compared to the same session without `--speak`.
+
 ## Configuration: CLI flags, `.env`, and environment variables
 
 Every setting below can be set as a CLI flag, an environment variable
@@ -214,12 +356,20 @@ you want.
 | Command cap | `--max-commands` | `AGENT_DEMOFORGE_MAX_COMMANDS` | `12` | Hard cap on total commands run. |
 | Per-command timeout | `--per-command-timeout` | `AGENT_DEMOFORGE_PER_COMMAND_TIMEOUT` | `90` | Seconds. |
 | Wall-time cap | `--max-wall-seconds` | `AGENT_DEMOFORGE_MAX_WALL_SECONDS` | `480` | Hard cap on total sandbox execution time. |
-| API key | n/a | `ANTHROPIC_API_KEY` | none | Standard Anthropic SDK env var; without it, the offline dry-run fallback runs instead. |
+| API key | n/a | `ANTHROPIC_API_KEY` | none | Standard Anthropic SDK env var; without it, `generate` runs the offline dry-run fallback, while `ask`/`chat` (which have no such fallback) exit cleanly with an error. |
 
-Two flags are intentionally CLI-only (not part of the settings table above,
-since they're one-shot behaviors rather than persistent configuration):
-`--yes` (skip the confirmation prompt) and `--no-cache` (force a fresh
-Explore phase, bypassing the cache described below).
+`--model` and `--voice` (with the same precedence and defaults as above)
+and the repo positional argument (falling back to `AGENT_DEMOFORGE_REPO`)
+are shared as-is by `ask`/`chat`. `--speak` (see **Ask questions about the
+code**) is intentionally CLI-only, like `--yes`/`--no-cache` below — a
+one-shot behavior rather than persistent configuration, and not
+significant enough on its own to warrant a dedicated env var.
+
+Two `generate`-only flags are intentionally CLI-only (not part of the
+settings table above, since they're one-shot behaviors rather than
+persistent configuration): `--yes` (skip the confirmation prompt) and
+`--no-cache` (force a fresh Explore phase, bypassing the cache described
+below).
 
 ### `--sections`
 
@@ -305,6 +455,12 @@ agent-demoforge generate [<repo-path-or-git-url>] [--out demo_output] [--yes]
                     [--voice Samantha] [--author-name "Your Name"]
                     [--sections presentation,code_walkthrough,live_demo]
                     [--no-cache]
+
+agent-demoforge ask [<repo-path-or-git-url>] "<question>"
+                    [--model claude-opus-5] [--voice Samantha] [--speak]
+
+agent-demoforge chat [<repo-path-or-git-url>]
+                    [--model claude-opus-5] [--voice Samantha] [--speak]
 
 agent-demoforge init
 ```
@@ -437,11 +593,21 @@ Chapters:
 - **Explore-phase caching is lightly verified** (see above) — the
   mechanism is implemented and unit-tested against synthetic data, but has
   not yet been exercised against a real live Explore transcript.
+- **`ask`/`chat` have no offline fallback**, by design (see **Ask
+  questions about the code**) — without `ANTHROPIC_API_KEY` they simply
+  can't answer questions, and say so cleanly rather than faking it.
+- **The `generate` → `ask`/`chat` direction of cache sharing has not been
+  exercised with a real live API call**, for the same reason the rest of
+  this project's live-API paths haven't (no `ANTHROPIC_API_KEY` in the
+  build environment) — see the verification-honesty note in **Ask
+  questions about the code**.
 
 ## Roadmap
 
 - Exercise Explore-phase caching against a real `ANTHROPIC_API_KEY` run and
-  confirm a genuine cache hit skips the live tool-use loop end-to-end.
+  confirm a genuine cache hit skips the live tool-use loop end-to-end --
+  including a real `generate` run followed by a real `ask`/`chat` run
+  sharing one real cache file (see **Ask questions about the code**).
 - A real Python tokenizer (e.g. `tokenize`/`pygments`) for the code
   walkthrough style instead of the current regex heuristic, and
   highlighting support for more languages than Python.
@@ -452,6 +618,10 @@ Chapters:
 
 ## Changelog / notes
 
+- Added `agent-demoforge ask`/`chat`: read-only, no-`--yes`-needed Q&A about a
+  target repo's actual code, reusing the Explore phase's tools and sharing
+  its Explore-phase cache bidirectionally with `generate`. See **Ask
+  questions about the code**.
 - **Renamed** `DEMOFORGE_AUTHOR_NAME` → `AGENT_DEMOFORGE_AUTHOR_NAME` for
   consistency with every other setting's `AGENT_DEMOFORGE_` prefix. This
   project is pre-1.0, so it's a straight rename with no back-compat shim.
@@ -478,8 +648,16 @@ guarantee including a deliberately hallucinated/out-of-bounds reference
 (`test_code_walkthrough_integrity.py`), the three new render styles being
 real, correctly-sized, and visually distinct PNGs (`test_render_new_styles.py`),
 the Explore-phase cache's fingerprinting and save/load round-trip
-(`test_cache.py`), and `agent-demoforge init` writing a well-formed
-`.env.example` (`test_cli_init.py`).
+(`test_cache.py`), `agent-demoforge init` writing a well-formed
+`.env.example` (`test_cli_init.py`), and the `ask`/`chat` Q&A feature
+(`test_qa.py`): cache-seeding (a cached transcript is prepended before the
+new question turn, unmodified), multi-turn message-history bookkeeping via
+a scripted fake client, the clean-exit-no-traceback path with no
+credentials, the bidirectional cache save/load round trip in both
+directions, and a scripted-client dry run that still exercises real
+`list_dir`/`read_file` tool dispatch against a real sandboxed copy of
+`examples/toy_repo` — plus one real (not stubbed) `say`-through-speakers
+invocation in `test_tts_duration.py::TestSpeakLive` for `--speak`.
 
 ## License
 
