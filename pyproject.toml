@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "demoforge"
+version = "0.1.0"
+description = "An AI agent that reads a code repository and produces a narrated video demo of it."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Srinivasarao Polagani" }]
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.90",
+    "pydantic>=2",
+    "Pillow",
+    "imageio-ffmpeg",
+]
+
+[project.scripts]
+demoforge = "demoforge.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools]
+packages = ["demoforge"]
