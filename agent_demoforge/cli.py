@@ -73,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--voice",
         default=None,
         help="voice name to pass to the TTS backend (macOS 'say -v'). Defaults to "
-        f"'Daniel', a calm, soft-spoken male voice (env: {config.ENV_PREFIX}VOICE). "
+        f"'Samantha', a calm, soft-spoken female voice (env: {config.ENV_PREFIX}VOICE). "
         "Run `say -v ?` to list every voice installed on this Mac.",
     )
     gen.add_argument(
@@ -143,7 +143,7 @@ def main(argv=None) -> int:
         model = config.resolve_model(args.model, pipeline.DEFAULT_MODEL)
         source = config.resolve(args.source, [f"{config.ENV_PREFIX}REPO"], None)
         out_dir = config.resolve(args.out, [f"{config.ENV_PREFIX}OUT"], "demo_output")
-        voice = config.resolve(args.voice, [f"{config.ENV_PREFIX}VOICE"], "Daniel")
+        voice = config.resolve(args.voice, [f"{config.ENV_PREFIX}VOICE"], "Samantha")
         author_name = config.resolve(args.author_name, [f"{config.ENV_PREFIX}AUTHOR_NAME"], None)
         max_commands = config.resolve_int(args.max_commands, [f"{config.ENV_PREFIX}MAX_COMMANDS"], 12)
         per_command_timeout = config.resolve_int(

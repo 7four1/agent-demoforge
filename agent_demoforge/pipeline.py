@@ -562,7 +562,7 @@ def generate(
     max_commands: int = 12,
     per_command_timeout: int = 90,
     max_wall_seconds: int = 480,
-    voice: Optional[str] = "Daniel",
+    voice: Optional[str] = "Samantha",
     author_name: Optional[str] = None,
     sections: Optional[Sequence[str]] = None,
     no_cache: bool = False,

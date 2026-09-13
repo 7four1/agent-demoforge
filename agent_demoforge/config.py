@@ -100,7 +100,7 @@ ENV_VAR_DOCS = [
     (
         f"{ENV_PREFIX}VOICE",
         "macOS 'say' voice name used for narration audio. Run `say -v ?` to list voices.",
-        "Daniel",
+        "Samantha",
     ),
     (
         f"{ENV_PREFIX}AUTHOR_NAME",

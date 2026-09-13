@@ -136,7 +136,7 @@ class TestRenderEnvExample(unittest.TestCase):
 
     def test_defaults_are_shown(self):
         text = config.render_env_example()
-        self.assertIn("# AGENT_DEMOFORGE_VOICE=Daniel", text)
+        self.assertIn("# AGENT_DEMOFORGE_VOICE=Samantha", text)
         self.assertIn("# AGENT_DEMOFORGE_MAX_COMMANDS=12", text)
 
     def test_ends_with_single_trailing_newline(self):
