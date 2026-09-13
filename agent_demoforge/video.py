@@ -15,8 +15,10 @@ produces demo.gif for embedding in a README.
 from __future__ import annotations
 
 import os
+import re
+import shutil
 import subprocess
-from typing import List, Optional, Sequence, Tuple
+from typing import Optional, Sequence, Tuple
 
 import imageio_ffmpeg
 
@@ -139,14 +141,110 @@ def build_beat_clip(
     return out_path
 
 
-def concat_clips(clip_paths: Sequence[str], out_path: str) -> str:
+_DURATION_RE = re.compile(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
+
+
+def _parse_duration_seconds(ffmpeg_banner: str) -> Optional[float]:
+    m = _DURATION_RE.search(ffmpeg_banner)
+    if not m:
+        return None
+    h, mm, s = m.groups()
+    return int(h) * 3600 + int(mm) * 60 + float(s)
+
+
+def write_chapters_metadata(
+    meta_path: str, chapters: Sequence[Tuple[float, str]], total_duration: float
+) -> str:
+    """Write an ffmpeg FFMETADATA1 file with one [CHAPTER] block per
+    (start_seconds, title) entry in `chapters` (must be sorted ascending by
+    start time). Each chapter's END is the next chapter's START, or
+    `total_duration` for the last one."""
+    lines = [";FFMETADATA1"]
+    for i, (start, title) in enumerate(chapters):
+        end = chapters[i + 1][0] if i + 1 < len(chapters) else total_duration
+        start_ms = max(0, int(round(start * 1000)))
+        end_ms = int(round(end * 1000))
+        if end_ms <= start_ms:
+            end_ms = start_ms + 1
+        safe_title = (
+            (title or "")
+            .replace("\\", "\\\\")
+            .replace("=", "\\=")
+            .replace(";", "\\;")
+            .replace("#", "\\#")
+            .replace("\n", " ")
+        )
+        lines.append("[CHAPTER]")
+        lines.append("TIMEBASE=1/1000")
+        lines.append(f"START={start_ms}")
+        lines.append(f"END={end_ms}")
+        lines.append(f"title={safe_title}")
+    with open(meta_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    return meta_path
+
+
+def add_chapters(
+    input_path: str,
+    output_path: str,
+    chapters: Sequence[Tuple[float, str]],
+    total_duration: float,
+) -> bool:
+    """Remux `input_path` to `output_path`, attaching chapter markers via an
+    FFMETADATA sidecar file (the documented ffmpeg recipe: pass it as a
+    second input, then `-map_metadata 1 -map_chapters 1`). Stream-copies
+    (no re-encode) since only container metadata changes. Returns True on
+    success, False on any failure -- callers should fall back to the
+    un-chaptered file rather than fail the whole pipeline over this
+    nice-to-have."""
+    meta_path = output_path + ".chapters.txt"
+    write_chapters_metadata(meta_path, chapters, total_duration)
+    try:
+        run_ffmpeg(
+            [
+                "-i",
+                input_path,
+                "-i",
+                meta_path,
+                "-map_metadata",
+                "1",
+                "-map_chapters",
+                "1",
+                "-codec",
+                "copy",
+                output_path,
+            ]
+        )
+        return True
+    except FfmpegError:
+        return False
+    finally:
+        if os.path.exists(meta_path):
+            os.remove(meta_path)
+
+
+def concat_clips(
+    clip_paths: Sequence[str],
+    out_path: str,
+    chapters: Optional[Sequence[Tuple[float, str]]] = None,
+    chapter_total_duration: Optional[float] = None,
+) -> str:
     """Concatenate uniformly-encoded per-beat clips into one final mp4.
     Re-encodes (rather than stream-copying) for robustness against any
-    minor timestamp/keyframe inconsistency between clips."""
+    minor timestamp/keyframe inconsistency between clips.
+
+    If `chapters` (a list of (start_seconds, title), ascending) is given,
+    chapter metadata marking each section's start is attached as a second,
+    stream-copy remux pass -- best effort: if that pass fails for any
+    reason, the plain (un-chaptered) file is used instead so a nice-to-have
+    never breaks the base video.
+    """
     list_path = out_path + ".concat.txt"
     with open(list_path, "w", encoding="utf-8") as f:
         for p in clip_paths:
             f.write(f"file '{os.path.abspath(p)}'\n")
+
+    target = out_path + ".prechapters.mp4" if chapters else out_path
     try:
         run_ffmpeg(
             [
@@ -161,12 +259,25 @@ def concat_clips(clip_paths: Sequence[str], out_path: str) -> str:
                 "aac",
                 "-b:a",
                 "128k",
-                out_path,
+                target,
             ]
         )
     finally:
         if os.path.exists(list_path):
             os.remove(list_path)
+
+    if chapters:
+        total = chapter_total_duration
+        if total is None:
+            total = _parse_duration_seconds(probe_streams(target)) or 0.0
+        ok = add_chapters(target, out_path, chapters, total)
+        if not ok:
+            shutil.copyfile(target, out_path)
+        try:
+            os.remove(target)
+        except OSError:
+            pass
+
     return out_path
 
 

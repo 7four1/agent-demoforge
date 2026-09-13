@@ -148,6 +148,51 @@ def read_file(
     return text or "(empty file or empty line range)"
 
 
+def read_code_excerpt(
+    repo_root: str,
+    path: str,
+    start_line: Optional[int],
+    end_line: Optional[int],
+):
+    """Read a real, clamped line range of a real file for rendering a
+    code_walkthrough frame. Unlike `read_file` (which returns a
+    human-readable "Error: ..." string for the LLM), this returns None on
+    any failure -- missing file, path escaping the sandbox, unreadable file,
+    or an empty file -- so callers can cleanly skip the code frame instead
+    of ever trusting LLM-provided text as the on-screen code.
+
+    On success returns (clamped_start_line, clamped_end_line, text): a
+    hallucinated out-of-bounds line range is clamped to the file's real
+    bounds rather than causing a crash.
+    """
+    try:
+        target = safe_join(repo_root, path)
+    except PathEscapeError:
+        return None
+    if not os.path.isfile(target):
+        return None
+    try:
+        with open(target, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        return None
+
+    total = len(lines)
+    if total == 0:
+        return None
+
+    start = start_line if start_line and start_line > 0 else 1
+    start = min(start, total)
+    end = end_line if end_line and end_line > 0 else total
+    end = min(end, total)
+    if end < start:
+        end = start
+
+    selected = lines[start - 1 : end]
+    text = "".join(selected)
+    return start, end, text
+
+
 def execute_tool(repo_root: str, name: str, tool_input: Dict[str, Any]) -> str:
     if name == "list_dir":
         return list_dir(repo_root, tool_input.get("path", "."))

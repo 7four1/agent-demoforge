@@ -1,11 +1,25 @@
-"""Renders "terminal card" frame images for each demo beat using Pillow.
+"""Renders frame images for each demo beat using Pillow.
 
-Pure image generation -- no ffmpeg calls live here, so this module (and
-its ANSI-stripping/wrapping helpers) is fully unit-testable offline.
+Four distinct visual styles live here, one per beat kind:
+    render_frame          -- the original "terminal card" style, used for
+                              live_demo beats. Unchanged.
+    render_slide_frame    -- a clean, light "keynote slide" style for
+                              presentation beats (title + optional bullets).
+    render_code_frame     -- a dark editor-like (blue/charcoal) style for
+                              code_walkthrough beats: filename + line-range
+                              header, monospace code with a crude
+                              keyword/string/comment highlight heuristic for
+                              Python (plain monospace for everything else).
+    render_section_card   -- a simple, bold, centered "Part N of M -- <Name>"
+                              title card marking a section transition.
+
+Pure image generation -- no ffmpeg calls live here, so this module (and its
+ANSI-stripping/wrapping/highlighting helpers) is fully unit-testable offline.
 """
 
 from __future__ import annotations
 
+import keyword as _keyword_mod
 import os
 import re
 from typing import List, Optional
@@ -26,6 +40,38 @@ OUTPUT_COLOR = (205, 205, 215)
 ACCENT_COLOR = (100, 170, 250)
 
 OUTPUT_CHAR_BUDGET = 1400
+
+# -- presentation "keynote slide" style: light, high-contrast, not-a-terminal --
+SLIDE_BG = (250, 250, 247)
+SLIDE_ACCENT = (0, 110, 200)
+SLIDE_TITLE_COLOR = (20, 20, 26)
+SLIDE_BODY_COLOR = (55, 58, 68)
+SLIDE_BULLET_MARK_COLOR = (0, 110, 200)
+
+# -- code walkthrough "editor" style: dark blue/charcoal, distinct from the
+# near-black terminal card and from the light slide --
+CODE_BG = (24, 29, 43)
+CODE_HEADER_BG = (16, 20, 32)
+CODE_HEADER_COLOR = (150, 190, 255)
+CODE_LINE_NUM_COLOR = (90, 102, 133)
+CODE_DEFAULT_COLOR = (222, 228, 240)
+CODE_KEYWORD_COLOR = (255, 121, 198)
+CODE_STRING_COLOR = (150, 220, 150)
+CODE_COMMENT_COLOR = (105, 118, 145)
+CODE_MISSING_BG = (24, 29, 43)
+CODE_MISSING_COLOR = (200, 130, 130)
+
+# -- section title card style: simple, bold, centered, distinct from all of
+# the above (deep indigo, not near-black and not blue-charcoal) --
+SECTION_BG = (26, 18, 46)
+SECTION_ACCENT = (255, 176, 59)
+SECTION_TEXT_COLOR = (240, 238, 248)
+
+_PY_KEYWORDS = set(_keyword_mod.kwlist)
+_CODE_TOKEN_RE = re.compile(
+    r"(\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|#.*|[A-Za-z_][A-Za-z0-9_]*|\s+|.)"
+)
+_MAX_CODE_LINE_CHARS = 140
 
 _ANSI_RE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
@@ -154,6 +200,189 @@ def render_frame(
                     break
                 draw.text((30, ty), wrapped_line, font=mono_font, fill=OUTPUT_COLOR)
                 ty += line_height
+
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
+    img.save(out_path, "PNG")
+    return out_path
+
+
+def render_slide_frame(
+    out_path: str,
+    title: str,
+    bullets: Optional[List[str]] = None,
+    width: int = WIDTH,
+    height: int = HEIGHT,
+) -> str:
+    """Render one "keynote slide" frame: a clean, light, high-contrast
+    background with a title and optional bullet points -- used for
+    presentation-section beats. Visually distinct from both the dark
+    terminal-card and dark editor-card styles."""
+    img = Image.new("RGB", (width, height), SLIDE_BG)
+    draw = ImageDraw.Draw(img)
+
+    draw.rectangle([0, 0, width, 14], fill=SLIDE_ACCENT)
+
+    title_font = load_font(40)
+    bullet_font = load_font(24)
+
+    y = 110
+    for line in wrap_text(title or "", title_font, width - 140, draw):
+        draw.text((70, y), line, font=title_font, fill=SLIDE_TITLE_COLOR)
+        y += 52
+
+    if bullets:
+        y += 30
+        for bullet in bullets:
+            wrapped = wrap_text(bullet, bullet_font, width - 200, draw)
+            for i, line in enumerate(wrapped):
+                if y > height - 50:
+                    break
+                if i == 0:
+                    draw.ellipse([70, y + 10, 82, y + 22], fill=SLIDE_BULLET_MARK_COLOR)
+                    draw.text((100, y), line, font=bullet_font, fill=SLIDE_BODY_COLOR)
+                else:
+                    draw.text((100, y), line, font=bullet_font, fill=SLIDE_BODY_COLOR)
+                y += 36
+            y += 12
+
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
+    img.save(out_path, "PNG")
+    return out_path
+
+
+def _highlight_python_tokens(draw: ImageDraw.ImageDraw, x: int, y: int, line: str, font) -> None:
+    """Crude keyword/string/comment color heuristic for Python source
+    lines -- not a real tokenizer/parser, just a regex-based approximation
+    that's good enough to make code walkthrough frames visually readable."""
+    if len(line) > _MAX_CODE_LINE_CHARS:
+        line = line[: _MAX_CODE_LINE_CHARS - 3] + "..."
+    for tok in _CODE_TOKEN_RE.findall(line):
+        if not tok:
+            continue
+        if tok.startswith("#"):
+            color = CODE_COMMENT_COLOR
+        elif tok[0] in "\"'":
+            color = CODE_STRING_COLOR
+        elif tok in _PY_KEYWORDS:
+            color = CODE_KEYWORD_COLOR
+        else:
+            color = CODE_DEFAULT_COLOR
+        draw.text((x, y), tok, font=font, fill=color)
+        x += draw.textlength(tok, font=font)
+
+
+def render_code_frame(
+    out_path: str,
+    path: str,
+    start_line: int,
+    end_line: int,
+    code_text: str,
+    width: int = WIDTH,
+    height: int = HEIGHT,
+) -> str:
+    """Render one code-walkthrough frame: a filename + line-range header
+    over real, monospace source text (with a crude Python syntax-highlight
+    heuristic when `path` ends in `.py`; plain monospace otherwise).
+
+    `code_text` must be REAL file content re-read from the sandboxed repo
+    copy at render time by the caller (see pipeline.py) -- this function
+    itself does no filesystem I/O and never trusts LLM-authored code text.
+    """
+    img = Image.new("RGB", (width, height), CODE_BG)
+    draw = ImageDraw.Draw(img)
+
+    header_font = load_font(22)
+    mono_font = load_font(18)
+
+    draw.rectangle([0, 0, width, 50], fill=CODE_HEADER_BG)
+    header = f"{path}  (lines {start_line}-{end_line})"
+    draw.text((20, 13), header, font=header_font, fill=CODE_HEADER_COLOR)
+
+    is_python = path.endswith(".py")
+    line_height = 24
+    y = 70
+    line_no = start_line
+    lines = code_text.splitlines() or [""]
+    for line in lines:
+        if y > height - 30:
+            break
+        num_str = f"{line_no:>4}  "
+        draw.text((20, y), num_str, font=mono_font, fill=CODE_LINE_NUM_COLOR)
+        x = 20 + draw.textlength(num_str, font=mono_font)
+        if is_python:
+            _highlight_python_tokens(draw, x, y, line, mono_font)
+        else:
+            trimmed = line
+            if len(trimmed) > _MAX_CODE_LINE_CHARS:
+                trimmed = trimmed[: _MAX_CODE_LINE_CHARS - 3] + "..."
+            draw.text((x, y), trimmed, font=mono_font, fill=CODE_DEFAULT_COLOR)
+        y += line_height
+        line_no += 1
+
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
+    img.save(out_path, "PNG")
+    return out_path
+
+
+def render_code_missing_frame(
+    out_path: str,
+    path: str,
+    reason: str = "referenced file/line-range could not be found on disk",
+    width: int = WIDTH,
+    height: int = HEIGHT,
+) -> str:
+    """Fallback frame used when a code_walkthrough beat's `code_ref` could
+    not be resolved to real file content (e.g. a hallucinated path) --
+    clearly discloses the skip rather than ever fabricating code text."""
+    img = Image.new("RGB", (width, height), CODE_MISSING_BG)
+    draw = ImageDraw.Draw(img)
+    header_font = load_font(22)
+    body_font = load_font(24)
+    draw.rectangle([0, 0, width, 50], fill=CODE_HEADER_BG)
+    draw.text((20, 13), path or "(unknown path)", font=header_font, fill=CODE_HEADER_COLOR)
+    y = 300
+    for line in wrap_text(f"Code excerpt skipped: {reason}", body_font, width - 120, draw):
+        draw.text((60, y), line, font=body_font, fill=CODE_MISSING_COLOR)
+        y += 36
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
+    img.save(out_path, "PNG")
+    return out_path
+
+
+def render_section_card(
+    out_path: str,
+    section_index: int,
+    section_count: int,
+    section_name: str,
+    width: int = WIDTH,
+    height: int = HEIGHT,
+) -> str:
+    """Render one simple, bold, centered section-transition title card,
+    e.g. "Part 1 of 3" over "Overview". Visually distinct from the
+    terminal-card, slide, and code-card styles (deep indigo background)."""
+    img = Image.new("RGB", (width, height), SECTION_BG)
+    draw = ImageDraw.Draw(img)
+
+    label_font = load_font(28)
+    title_font = load_font(52)
+
+    label = f"PART {section_index} OF {section_count}"
+    label_w = draw.textlength(label, font=label_font)
+    draw.text(((width - label_w) / 2, height / 2 - 90), label, font=label_font, fill=SECTION_ACCENT)
+
+    title_w = draw.textlength(section_name, font=title_font)
+    draw.text(
+        ((width - title_w) / 2, height / 2 - 20),
+        section_name,
+        font=title_font,
+        fill=SECTION_TEXT_COLOR,
+    )
+
+    rule_w = 90
+    draw.rectangle(
+        [(width - rule_w) / 2, height / 2 + 60, (width + rule_w) / 2, height / 2 + 65],
+        fill=SECTION_ACCENT,
+    )
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
     img.save(out_path, "PNG")

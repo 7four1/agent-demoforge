@@ -15,6 +15,7 @@ dependencies = [
     "pydantic>=2",
     "Pillow",
     "imageio-ffmpeg",
+    "python-dotenv",
 ]
 
 [project.scripts]
