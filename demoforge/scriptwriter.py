@@ -38,12 +38,20 @@ is_setup=true; these will run but their full output won't be dwelled on.
 - Order beats so setup commands come before the beats that demonstrate functionality."""
 
 
-def write_script(client, model: str, messages: list) -> DemoScript:
+def write_script(client, model: str, messages: list, author_name: Optional[str] = None) -> DemoScript:
+    instruction = SCRIPT_INSTRUCTION
+    if author_name:
+        instruction += (
+            f"\n- This demo is presented by {author_name}. Have the intro beat naturally "
+            f"mention that {author_name} put this demo together (e.g. as part of the "
+            "greeting), without sounding robotic or forced. Do not mention them again in "
+            "any other beat."
+        )
     response = client.messages.parse(
         model=model,
         max_tokens=4096,
         thinking={"type": "adaptive"},
-        messages=messages + [{"role": "user", "content": SCRIPT_INSTRUCTION}],
+        messages=messages + [{"role": "user", "content": instruction}],
         output_format=DemoScript,
     )
     return response.parsed_output

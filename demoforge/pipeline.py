@@ -54,7 +54,9 @@ def _detect_console_script(repo_root: str) -> Optional[str]:
     return None
 
 
-def build_fallback_script(repo_root: str, source: Optional[str] = None) -> DemoScript:
+def build_fallback_script(
+    repo_root: str, source: Optional[str] = None, author_name: Optional[str] = None
+) -> DemoScript:
     """A heuristic, non-LLM demo script used when the Anthropic API is
     unavailable, so the rest of the pipeline (execute/narrate/render/video)
     can still be exercised end-to-end. Clearly disclosed as a dry run."""
@@ -67,14 +69,18 @@ def build_fallback_script(repo_root: str, source: Optional[str] = None) -> DemoS
     console_script = _detect_console_script(repo_root)
     has_readme = os.path.isfile(os.path.join(repo_root, "README.md"))
 
-    beats: List[DemoBeat] = [
-        DemoBeat(
-            narration=(
-                f"Here's a quick automated tour of {project_name}, put together without a "
-                "live connection to the Claude API this time."
-            )
+    if author_name:
+        intro_narration = (
+            f"Hi, I'm putting together a quick demo of {project_name} on behalf of "
+            f"{author_name}, without a live connection to the Claude API this time."
         )
-    ]
+    else:
+        intro_narration = (
+            f"Here's a quick automated tour of {project_name}, put together without a "
+            "live connection to the Claude API this time."
+        )
+
+    beats: List[DemoBeat] = [DemoBeat(narration=intro_narration)]
 
     if is_python:
         beats.append(
@@ -129,7 +135,7 @@ def build_fallback_script(repo_root: str, source: Optional[str] = None) -> DemoS
     return DemoScript(title=f"{project_name} demo (offline dry run)", beats=beats)
 
 
-def run_llm_phases(repo_root: str, model: str):
+def run_llm_phases(repo_root: str, model: str, author_name: Optional[str] = None):
     """Attempt the live Explore + Script phases against the real Anthropic
     API. Returns (script_or_none, live: bool, reason_or_none)."""
     try:
@@ -140,7 +146,7 @@ def run_llm_phases(repo_root: str, model: str):
     try:
         client = anthropic.Anthropic()
         messages = explorer.run_explore_loop(client, model, repo_root)
-        script = scriptwriter.write_script(client, model, messages)
+        script = scriptwriter.write_script(client, model, messages, author_name=author_name)
         return script, True, None
     except Exception as e:  # noqa: BLE001 - any failure means: disclose and fall back
         return None, False, f"{type(e).__name__}: {e}"
@@ -208,7 +214,8 @@ def generate(
     max_commands: int = 12,
     per_command_timeout: int = 90,
     max_wall_seconds: int = 480,
-    voice: Optional[str] = None,
+    voice: Optional[str] = "Daniel",
+    author_name: Optional[str] = None,
 ) -> int:
     print(f"demoforge: preparing an isolated sandbox copy of '{source}'...")
     repo_root = sandbox.prepare_workdir(source)
@@ -234,13 +241,13 @@ def generate(
             sandbox.cleanup_workdir(repo_root)
             return 1
 
-    script, llm_live, llm_reason = run_llm_phases(repo_root, model)
+    script, llm_live, llm_reason = run_llm_phases(repo_root, model, author_name=author_name)
     if llm_live:
         print(f"demoforge: explore+script phases completed live via the Anthropic API ({model}).")
     else:
         print(f"demoforge: live Anthropic API phases unavailable ({llm_reason}).")
         print("demoforge: falling back to an offline heuristic demo script (clearly marked in output).")
-        script = build_fallback_script(repo_root, source=source)
+        script = build_fallback_script(repo_root, source=source, author_name=author_name)
 
     sb = sandbox.Sandbox(
         repo_root,
@@ -338,6 +345,7 @@ def generate(
     _write_manifest(
         script, records, manifest_path, source, repo_root, model,
         llm_live, llm_reason, tts_available, backend, demo_mp4, demo_gif,
+        voice=voice, author_name=author_name,
     )
 
     print()
@@ -420,16 +428,20 @@ def _write_manifest(
     backend,
     demo_mp4: str,
     demo_gif: str,
+    voice: Optional[str] = None,
+    author_name: Optional[str] = None,
 ) -> None:
     manifest = {
         "title": script.title,
         "source": source,
         "sandbox_repo_root": repo_root,
         "model": model,
+        "author_name": author_name,
         "llm_phase": {"live": llm_live, "reason": llm_reason},
         "tts": {
             "available": tts_available,
             "backend": type(backend).__name__,
+            "voice": voice or getattr(backend, "voice", None),
             "reason": None if tts_available else getattr(backend, "reason", None),
         },
         "beats": [

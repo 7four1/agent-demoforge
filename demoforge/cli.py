@@ -37,7 +37,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-wall-seconds", type=int, default=480, help="hard cap on total execution wall time"
     )
     gen.add_argument(
-        "--voice", default=None, help="voice name to pass to the TTS backend (macOS 'say -v')"
+        "--voice",
+        default="Daniel",
+        help="voice name to pass to the TTS backend (macOS 'say -v'). "
+        "Defaults to 'Daniel', a calm, soft-spoken male voice. "
+        "Run `say -v ?` to list every voice installed on this Mac.",
+    )
+    gen.add_argument(
+        "--author-name",
+        default=os.environ.get("DEMOFORGE_AUTHOR_NAME"),
+        help="if set, the demo's intro beat will naturally mention this person as the "
+        "one who put the demo together (e.g. --author-name 'Srinivasarao Polagani'). "
+        "Also configurable via the DEMOFORGE_AUTHOR_NAME env var. Omit for no mention.",
     )
 
     return parser
@@ -58,6 +69,7 @@ def main(argv=None) -> int:
                 per_command_timeout=args.per_command_timeout,
                 max_wall_seconds=args.max_wall_seconds,
                 voice=args.voice,
+                author_name=args.author_name,
             )
         except FileNotFoundError as e:
             print(f"demoforge: error: {e}", file=sys.stderr)
