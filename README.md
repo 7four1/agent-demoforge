@@ -11,7 +11,7 @@ repo, narrates the result with real synthesized speech, and renders it all
 into a playable `demo.mp4` (plus a `demo.gif` you can drop straight into a
 GitHub README) — structured as a three-act video: **Overview**, **Code
 Walkthrough**, and **Live Demo**.
-
+ 
 Prefer a quick answer over a video? `agent-demoforge ask <repo> "<question>"` and
 `agent-demoforge chat <repo>` answer questions about a repo directly, grounded in
 its real code, read-only (no `--yes` needed) — see **Ask questions about
